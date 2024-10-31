@@ -1,17 +1,43 @@
 use egui::Key;
+use std::fs::{exists, File};
+use std::path::Path;
 use std::process::Command;
 use std::thread;
+
+const LOCK_FILEPATH: &str = "/tmp/.raylock.lock";
 
 pub fn sway_lock_input() {
     thread::spawn(move || {
         let _ = Command::new("swaymsg").args(["mode", "lock"]).spawn();
+        let _ = Command::new("swaymsg")
+            .args(["input", "type:touchpad", "events", "disabled"])
+            .spawn();
     });
 }
 
 pub fn sway_unlock_input() {
     thread::spawn(move || {
         let _ = Command::new("swaymsg").args(["mode", "default"]).spawn();
+        let _ = Command::new("swaymsg")
+            .args(["input", "type:touchpad", "events", "enabled"])
+            .spawn();
     });
+}
+
+pub fn create_lock() {
+    let _ = File::create(LOCK_FILEPATH).unwrap();
+}
+
+pub fn is_locked() -> bool {
+    Path::exists(Path::new(LOCK_FILEPATH))
+}
+
+pub fn remove_lock() {
+    if !is_locked() {
+        return;
+    }
+
+    std::fs::remove_file(Path::new(LOCK_FILEPATH));
 }
 
 pub fn format_key(key: Key, shift_pressed: bool) -> String {

@@ -33,7 +33,7 @@ const LOGIN_FAIL_COUNT_CIRCLE_STROKE: Stroke = Stroke {
     color: LOGIN_FAIL_COLOR,
 };
 
-fn rotCircle(i: i16, center: Pos2, rad: f32, offset_ang: f32, ang_per_num: f32) -> Pos2 {
+fn rot_circle(i: i16, center: Pos2, rad: f32, offset_ang: f32, ang_per_num: f32) -> Pos2 {
     center
         + (egui::Vec2 {
             x: rad * f32::cos(i as f32 * ang_per_num + offset_ang),
@@ -41,7 +41,7 @@ fn rotCircle(i: i16, center: Pos2, rad: f32, offset_ang: f32, ang_per_num: f32) 
         })
 }
 
-pub fn update(
+pub fn update_password_viewer(
     wstate: MutexGuard<'_, structs::AuthState>,
     ctx: &egui::Context,
     frame: &mut eframe::Frame,
@@ -71,7 +71,7 @@ pub fn update(
     let ang_per_fail = 2. * PI / state.failed_attempts as f32;
     let len: i16 = state.password.len() as i16;
 
-    let mut last_pos = rotCircle(
+    let mut last_pos = rot_circle(
         len - 1,
         center,
         LOGIN_CIRCLE_RADIUS,
@@ -84,7 +84,7 @@ pub fn update(
             if state.failed_attempts <= 1 {
                 center
             } else {
-                rotCircle(
+                rot_circle(
                     i as i16,
                     center,
                     LOGIN_FAIL_COUNT_CIRCLE_RADIUS,
@@ -107,7 +107,7 @@ pub fn update(
             if len <= 1 {
                 center
             } else {
-                rotCircle(
+                rot_circle(
                     i,
                     center,
                     LOGIN_CIRCLE_RADIUS,

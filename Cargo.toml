@@ -6,8 +6,5 @@ edition = "2021"
 [dependencies]
 eframe = "0.28"
 egui = "0.28"
-portable-pty = "0.8.1"
-termwiz = "0.22.0"
-vte = "0.13.0"
-egui-terminal = { git = "https://github.com/Quinntyx/egui-terminal" }
-ecolor = "0.29.1"
+rand = "0.8.5"
+serde = "1.0.214"

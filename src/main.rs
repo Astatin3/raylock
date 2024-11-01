@@ -1,7 +1,6 @@
 use eframe::{egui, App};
 use egui::FontFamily;
 use egui::Key;
-use egui_terminal;
 use input::is_locked;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -9,6 +8,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use structs::{PaneConfig, PaneRenderer, SplitDirection};
 
 // use egui::epaint::text::{FontInsert, InsertFontFamily};
 
@@ -16,54 +16,55 @@ use eframe::CreationContext;
 use egui::ecolor::Color32;
 use egui::FontId;
 use egui::Stroke;
-use egui_terminal::prelude::*;
-use egui_terminal::render::CursorType;
+// use egui_terminal::prelude::*;
+// use egui_terminal::render::CursorType;
 
 use egui::ecolor::HexColor;
 
+mod configs;
 mod input;
 mod splitter;
 mod structs;
 mod ui;
 
 // Demonstrates how to add a font to the existing ones
-fn add_font(ctx: &egui::Context) {
-    // Start with the default fonts (we will be adding to them rather than replacing them).
-    let mut fonts = egui::FontDefinitions::default();
+// fn add_font(ctx: &egui::Context) {
+//     // Start with the default fonts (we will be adding to them rather than replacing them).
+//     let mut fonts = egui::FontDefinitions::default();
 
-    // Install my own font (maybe supporting non-latin characters).
-    // .ttf and .otf files supported.
-    fonts.font_data.insert(
-        "my_font".to_owned(),
-        egui::FontData::from_static(include_bytes!(
-            "/home/astatin3/.fonts/UbuntuMono/UbuntuMonoNerdFontMono-Regular.ttf"
-        )),
-    );
+//     // Install my own font (maybe supporting non-latin characters).
+//     // .ttf and .otf files supported.
+//     fonts.font_data.insert(
+//         "my_font".to_owned(),
+//         egui::FontData::from_static(include_bytes!(
+//             "/home/astatin3/.fonts/UbuntuMono/UbuntuMonoNerdFontMono-Regular.ttf"
+//         )),
+//     );
 
-    // Put my font first (highest priority) for proportional text:
-    // fonts
-    //     .families
-    //     .entry(egui::FontFamily::Proportional)
-    //     .or_default()
-    //     .insert(0, "my_font".to_owned());
+//     // Put my font first (highest priority) for proportional text:
+//     // fonts
+//     //     .families
+//     //     .entry(egui::FontFamily::Proportional)
+//     //     .or_default()
+//     //     .insert(0, "my_font".to_owned());
 
-    // Put my font as last fallback for monospace:
-    fonts
-        .families
-        .entry(egui::FontFamily::Monospace)
-        .or_default()
-        .push("my_font".to_owned());
+//     // Put my font as last fallback for monospace:
+//     fonts
+//         .families
+//         .entry(egui::FontFamily::Monospace)
+//         .or_default()
+//         .push("my_font".to_owned());
 
-    // Tell egui to use these fonts:
-    ctx.set_fonts(fonts);
-}
+//     // Tell egui to use these fonts:
+//     ctx.set_fonts(fonts);
+// }
 
 use splitter::Splitter;
 
 #[derive(Default)]
 struct ExampleApp {
     auth_state: Arc<Mutex<structs::AuthState>>,
-    terminals: HashMap<String, TermHandler>,
+    // terminals: HashMap<String, TermHandler>,
 }
 
 impl ExampleApp {
@@ -101,6 +102,9 @@ impl eframe::App for ExampleApp {
 
         let mut state = self.auth_state.lock().unwrap();
         //ctx.set_pixels_per_point(1.5);
+        let config = ui::winconfig();
+
+        let pane_renderer = PaneRenderer::new(config);
 
         if ctx.input(|i| i.events.len() > 0) {
             ctx.input(|i| {
@@ -177,7 +181,7 @@ impl eframe::App for ExampleApp {
                 //     },
                 // );
 
-                ui::update_password_viewer(state, ctx, _frame, ui);
+                ui::update_password_viewer(state, ctx, _frame, ui, pane_renderer);
             });
     }
 }
@@ -228,7 +232,7 @@ fn main() -> eframe::Result<()> {
         thread::sleep(Duration::from_millis(100));
     });
 
-    let mut map = HashMap::new();
+    // let mut map = HashMap::new();
     // map.insert(String::from("0"), TermHandler::new_from_str("btop"));
     // map.insert(String::from("1h-0"), TermHandler::new_from_str("nvitop"));
     // map.insert(String::from("1h-1"), TermHandler::new_from_str("neofetch"));
@@ -247,7 +251,7 @@ fn main() -> eframe::Result<()> {
         Box::new(|_| {
             Ok(Box::<ExampleApp>::new(ExampleApp {
                 auth_state: state,
-                terminals: map,
+                // terminals: map,
             }))
         }),
     )

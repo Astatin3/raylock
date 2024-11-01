@@ -1,5 +1,5 @@
 use egui::Key;
-use std::fs::{exists, File};
+use std::fs::File;
 use std::path::Path;
 use std::process::Command;
 use std::thread;
@@ -9,18 +9,18 @@ const LOCK_FILEPATH: &str = "/tmp/.raylock.lock";
 pub fn sway_lock_input() {
     thread::spawn(move || {
         let _ = Command::new("swaymsg").args(["mode", "lock"]).spawn();
-        let _ = Command::new("swaymsg")
-            .args(["input", "type:touchpad", "events", "disabled"])
-            .spawn();
+        // let _ = Command::new("swaymsg")
+        //     .args(["input", "type:touchpad", "events", "disabled"])
+        //     .spawn();
     });
 }
 
 pub fn sway_unlock_input() {
     thread::spawn(move || {
         let _ = Command::new("swaymsg").args(["mode", "default"]).spawn();
-        let _ = Command::new("swaymsg")
-            .args(["input", "type:touchpad", "events", "enabled"])
-            .spawn();
+        // let _ = Command::new("swaymsg")
+        //     .args(["input", "type:touchpad", "events", "enabled"])
+        //     .spawn();
     });
 }
 

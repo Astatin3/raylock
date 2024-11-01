@@ -5,8 +5,9 @@ Unfortunatly this is not the most secure desktop locker, as it involves using sw
 
 ```
 # Add this to your sway config:
-for_window [title="^raylock$"] sticky enable, floating enable, resize set 1920 px 1080 px, title_format "", border pixel none
+for_window [title="^raylock$"] sticky enable, fullscreen
 mode "lock" {
-  bindsym $mod+Shift+q exec true
+ bindsym XF86MonBrightnessUp exec brightnessctl s +5%
+ bindsym XF86MonBrightnessDown exec brightnessctl s 5%-
 }
 ```

@@ -40,3 +40,65 @@ pub const DOTS_COLOR: Color32 = Color32::from_rgb(255, 255, 255);
 
 pub const CORNER_CUT: f32 = LOGIN_CIRCLE_RADIUS * 1.41421356237;
 pub const PANE_GAP: f32 = 6.;
+
+// Example JSON configuration:
+pub const EXAMPLE_CONFIG: &str = r#"
+{
+    "root": {
+        "id": "root",
+        "split": {
+            "direction": "Horizontal",
+            "ratio": 0.9,
+            "children": [
+                {
+                    "id": "left",
+                    "pane_type": {
+                        "type": "Solid",
+                        "config": {
+                            "color": [255, 255, 255]
+                        }
+                    }
+                },
+                {
+                    "id": "right",
+                    "split": {
+                        "direction": "Vertical",
+                        "ratio": 0.6,
+                        "children": [
+                            {
+                                "id": "right_top",
+                                "pane_type": {
+                                    "type": "Text",
+                                    "config": {
+                                        "text": "Hello World",
+                                        "font_size": 24.0,
+                                        "color": [255, 255, 255],
+                                        "background_color": [50, 50, 150]
+                                    }
+                                }
+                            },
+                            {
+                                "id": "right_bottom",
+                                "pane_type": {
+                                    "type": "Gradient",
+                                    "config": {
+                                        "start_color": [200, 200, 200],
+                                        "end_color": [100, 200, 100],
+                                        "horizontal": true
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    },
+    "default_pane_type": {
+        "type": "Solid",
+        "config": {
+            "color": [200, 200, 200]
+        }
+    }
+}
+"#;

@@ -1,14 +1,15 @@
 use eframe::{egui, App};
 use egui::FontFamily;
 use egui::Key;
+use graph::CpuGraph;
 use input::is_locked;
+use panes::{PaneConfig, PaneRenderer, SplitDirection};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use structs::{PaneConfig, PaneRenderer, SplitDirection};
 
 // use egui::epaint::text::{FontInsert, InsertFontFamily};
 
@@ -22,8 +23,9 @@ use egui::Stroke;
 use egui::ecolor::HexColor;
 
 mod configs;
+mod graph;
 mod input;
-mod splitter;
+mod panes;
 mod structs;
 mod ui;
 
@@ -59,11 +61,10 @@ mod ui;
 //     ctx.set_fonts(fonts);
 // }
 
-use splitter::Splitter;
-
-#[derive(Default)]
+// #[derive(Default)]
 struct ExampleApp {
     auth_state: Arc<Mutex<structs::AuthState>>,
+    cpu_graph: CpuGraph,
     // terminals: HashMap<String, TermHandler>,
 }
 
@@ -102,9 +103,10 @@ impl eframe::App for ExampleApp {
 
         let mut state = self.auth_state.lock().unwrap();
         //ctx.set_pixels_per_point(1.5);
-        let config = ui::winconfig();
+        // let config = ui::winconfig();
 
-        let pane_renderer = PaneRenderer::new(config);
+        let config: panes::LayoutConfig = serde_json::from_str(configs::EXAMPLE_CONFIG).unwrap();
+        let mut pane_renderer = PaneRenderer::new(config);
 
         if ctx.input(|i| i.events.len() > 0) {
             ctx.input(|i| {
@@ -149,6 +151,8 @@ impl eframe::App for ExampleApp {
         // let sine_points2 = PlotPoints::from_explicit_callback(|x| x.sin(), .., 5000);
         // let plot_b_lines = [Line::new(sine_points2).name("Sine")];
 
+        // self.cpu_graph.update();
+
         egui::CentralPanel::default()
             .frame(egui::Frame::none())
             .show(ctx, |ui| {
@@ -181,7 +185,17 @@ impl eframe::App for ExampleApp {
                 //     },
                 // );
 
-                ui::update_password_viewer(state, ctx, _frame, ui, pane_renderer);
+                ui::update_password_viewer(state, ctx, _frame, ui, &mut pane_renderer);
+
+                // self.cpu_graph.render(
+                //     ui.painter(),
+                //     egui::Rect {
+                //         min: egui::Pos2 { x: 0., y: 0. },
+                //         max: egui::Pos2 { x: 500., y: 500. },
+                //     },
+                // );
+
+                ctx.request_repaint();
             });
     }
 }
@@ -243,6 +257,8 @@ fn main() -> eframe::Result<()> {
         std::process::exit(1);
     }
 
+    let test = [1, 2, 3];
+
     input::create_lock();
 
     eframe::run_native(
@@ -251,10 +267,17 @@ fn main() -> eframe::Result<()> {
         Box::new(|_| {
             Ok(Box::<ExampleApp>::new(ExampleApp {
                 auth_state: state,
+                cpu_graph: CpuGraph::new(),
                 // terminals: map,
             }))
         }),
     )
+}
+
+fn test_test(test: &mut [i32]) {
+    for i in 0..test.len() {
+        test[i] += 1;
+    }
 }
 
 fn try_sudo(password: &str) -> Result<bool, std::io::Error> {

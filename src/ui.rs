@@ -1,15 +1,17 @@
 use crate::configs::*;
+use crate::graph::CpuGraph;
+use crate::panes;
 use crate::structs;
-use crate::structs::PaneRenderer;
+use panes::PaneRenderer;
 // use crate::structs::cur_context;
 // use crate::structs::windowTypes;
 
 use eframe::egui;
 use egui::Color32;
-use egui::Pos2;
 use egui::Shape;
+use egui::{Pos2, Vec2};
+use panes::{PaneConfig, SplitDirection};
 use std::f32::consts::PI;
-use structs::{PaneConfig, SplitDirection};
 
 use std::ops::Deref;
 use std::sync::MutexGuard;
@@ -22,108 +24,115 @@ fn rot_circle(i: i16, center: Pos2, rad: f32, offset_ang: f32, ang_per_num: f32)
         })
 }
 
-pub fn background_render(painter: &egui::Painter, rect: egui::Rect) {
+fn add_Pos2(add: Vec2, points: &mut Vec<Pos2>) -> &mut Vec<Pos2> {
+    for i in 0..points.len() {
+        points[i] = points[i] + add;
+    }
+    points
+}
+
+fn mult_Pos2(mult: f32, points: &mut Vec<Pos2>) -> &mut Vec<Pos2> {
+    let vec = Vec2 { x: mult, y: mult };
+    for i in 0..points.len() {
+        points[i] = points[i] * mult;
+    }
+    points
+}
+
+fn rotate_90(points: &mut Vec<Pos2>) -> &mut Vec<Pos2> {
+    for i in 0..points.len() {
+        points[i] = Pos2 {
+            x: -points[i].y,
+            y: points[i].x,
+        }
+    }
+    points
+}
+fn rotate_180(points: &mut Vec<Pos2>) -> &mut Vec<Pos2> {
+    for i in 0..points.len() {
+        points[i] = Pos2 {
+            x: -points[i].x,
+            y: -points[i].y,
+        }
+    }
+    points
+}
+fn rotate_270(points: &mut Vec<Pos2>) -> &mut Vec<Pos2> {
+    for i in 0..points.len() {
+        points[i] = Pos2 {
+            x: points[i].y,
+            y: -points[i].x,
+        }
+    }
+    points
+}
+
+const CORNER_SQUARE: [Pos2; 1] = [Pos2 { x: 0., y: 0. }];
+const CORNER_45: [Pos2; 2] = [Pos2 { x: 0., y: 1. }, Pos2 { x: 1., y: 0. }];
+const CORNER_30: [Pos2; 2] = [Pos2 { x: 0., y: 0.5 }, Pos2 { x: 1., y: 0. }];
+const CORNER_60: [Pos2; 2] = [Pos2 { x: 0., y: 1. }, Pos2 { x: 0.5, y: 0. }];
+
+fn get_corner_points(ctype: panes::CornerTypes) -> Vec<Pos2> {
+    // CORNER_30.to_vec()
+    match ctype {
+        panes::CornerTypes::SQUARE => CORNER_SQUARE.to_vec(),
+        panes::CornerTypes::Ang30 => CORNER_30.to_vec(),
+        panes::CornerTypes::Ang45 => CORNER_45.to_vec(),
+        panes::CornerTypes::Ang60 => CORNER_60.to_vec(),
+    }
+}
+
+pub fn background_render(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    corners: [panes::CornerTypes; 4],
+) {
+    let mut points: Vec<Pos2> = Vec::new();
     let left = rect.left() + PANE_GAP;
     let right = rect.right() - PANE_GAP;
     let bottom = rect.bottom() - PANE_GAP;
     let top = rect.top() + PANE_GAP;
-    let x1 = left + CORNER_CUT - PANE_GAP;
-    let x2 = right - CORNER_CUT + PANE_GAP;
-    let y1 = top + CORNER_CUT - PANE_GAP;
-    let y2 = bottom - CORNER_CUT + PANE_GAP;
+    // let x1 = left + CORNER_CUT - PANE_GAP;
+    // let x2 = right - CORNER_CUT + PANE_GAP;
+    // let y1 = top + CORNER_CUT - PANE_GAP;
+    // let y2 = bottom - CORNER_CUT + PANE_GAP;
 
-    let points = [
-        egui::Pos2 { x: x1, y: top },
-        egui::Pos2 { x: x2, y: top },
-        egui::Pos2 { x: right, y: y1 },
-        egui::Pos2 { x: right, y: y2 },
-        egui::Pos2 { x: x2, y: bottom },
-        egui::Pos2 { x: x1, y: bottom },
-        egui::Pos2 { x: left, y: y2 },
-        egui::Pos2 { x: left, y: y1 },
-    ];
+    points.append(add_Pos2(
+        Vec2 { x: left, y: top },
+        mult_Pos2(CORNER_CUT, &mut get_corner_points(corners[0]).to_vec()),
+    ));
 
-    let filled_polygon = Shape::convex_polygon(
-        points.to_vec(),
-        BACKGROUND_2,
-        egui::Stroke::new(0.5, TEXT_COLOR),
-    );
+    points.append(add_Pos2(
+        Vec2 { x: right, y: top },
+        mult_Pos2(
+            CORNER_CUT,
+            rotate_90(&mut get_corner_points(corners[1]).to_vec()),
+        ),
+    ));
+
+    points.append(add_Pos2(
+        Vec2 {
+            x: right,
+            y: bottom,
+        },
+        mult_Pos2(
+            CORNER_CUT,
+            rotate_180(&mut get_corner_points(corners[2]).to_vec()),
+        ),
+    ));
+
+    points.append(add_Pos2(
+        Vec2 { x: left, y: bottom },
+        mult_Pos2(
+            CORNER_CUT,
+            rotate_270(&mut get_corner_points(corners[3]).to_vec()),
+        ),
+    ));
+
+    let filled_polygon =
+        Shape::convex_polygon(points, BACKGROUND_2, egui::Stroke::new(0.5, TEXT_COLOR));
 
     painter.add(filled_polygon);
-    // painter.rect_filled(rect, 0.0, Color32::RED);
-    // painter.rect_stroke(rect, 0.0, (1.0, Color32::BLACK));
-}
-
-// fn draw_polygon(ui: &mut egui::Ui, points: &[Pos2], fill_color: egui::Color32, stroke: ) {
-//     if points.len() < 3 {
-//         return; // Need at least 3 points for a polygon
-//     }
-
-//     // Create the filled polygon
-//     let filled_polygon = Shape::convex_polygon(
-//         points.to_vec(),
-//         fill_color,
-//         Stroke::new(0.0, fill_color), // No stroke for fill
-//     );
-
-//     // Create the outline
-//     let outline = Shape::line(
-//         points.iter().chain(std::iter::once(&points[0])).cloned().collect(),
-//         Stroke::new(stroke_width, outline_color),
-//     );
-
-//     // Get the painter and draw both shapes
-//     let painter = ui.painter();
-//     painter.add(filled_polygon);
-//     painter.add(outline);
-// }
-
-pub fn winconfig() -> PaneConfig {
-    PaneConfig::new("root")
-        .with_split(SplitDirection::Horizontal, 0.5)
-        .with_callback(|painter: &egui::Painter, rect: egui::Rect| background_render(painter, rect))
-        .with_children(vec![
-            PaneConfig::new("left")
-                .with_split(SplitDirection::Vertical, 0.5)
-                .with_children(vec![
-                    PaneConfig::new("left_top").with_callback(
-                        |painter: &egui::Painter, rect: egui::Rect| {
-                            background_render(painter, rect)
-                        },
-                    ),
-                    PaneConfig::new("left_bottom")
-                        // .with_split(SplitDirection::Horizontal, 0.5)
-                        .with_callback(|painter: &egui::Painter, rect: egui::Rect| {
-                            background_render(painter, rect)
-                        }),
-                ]),
-            PaneConfig::new("right")
-                .with_split(SplitDirection::Vertical, 0.5)
-                .with_callback(|painter: &egui::Painter, rect: egui::Rect| {
-                    background_render(painter, rect)
-                })
-                .with_children(vec![
-                    PaneConfig::new("right_top")
-                        .with_split(SplitDirection::Horizontal, 0.5)
-                        .with_children(vec![
-                            PaneConfig::new("right_top_1").with_callback(
-                                |painter: &egui::Painter, rect: egui::Rect| {
-                                    background_render(painter, rect)
-                                },
-                            ),
-                            PaneConfig::new("right_top_2").with_callback(
-                                |painter: &egui::Painter, rect: egui::Rect| {
-                                    background_render(painter, rect)
-                                },
-                            ),
-                        ]),
-                    PaneConfig::new("right_bottom").with_callback(
-                        |painter: &egui::Painter, rect: egui::Rect| {
-                            background_render(painter, rect)
-                        },
-                    ),
-                ]),
-        ])
 }
 
 pub fn update_password_viewer(
@@ -131,7 +140,7 @@ pub fn update_password_viewer(
     ctx: &egui::Context,
     frame: &mut eframe::Frame,
     ui: &mut egui::Ui,
-    winconfig: PaneRenderer,
+    winconfig: &mut PaneRenderer,
 ) {
     let rect: egui::Rect = ui.available_rect_before_wrap();
     // let ctx: cur_context = cur_context {
@@ -153,7 +162,7 @@ pub fn update_password_viewer(
     );
 
     dots(painter, ui.clip_rect());
-    winconfig.render(painter, rect);
+    winconfig.render(painter, &rect);
     paint_password_circle(state, ctx, frame, ui, center, painter);
 }
 
@@ -259,6 +268,8 @@ fn paint_password_circle(
             last_pos = pos;
         }
     }
+
+    ctx.request_repaint();
 }
 
 fn paint_windows(
@@ -277,5 +288,3 @@ fn paint_windows(
     //     }
     // }
 }
-
-fn paint_window(painter: &egui::Painter, width: f32, height: f32, x: f32, y: f32) {}

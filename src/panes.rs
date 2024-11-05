@@ -1,8 +1,24 @@
-use egui::{Color32, Painter, Pos2, Rect};
+use egui::ecolor::linear_u8_from_linear_f32;
+use egui::emath::Rot2;
+use egui::epaint::TextShape;
+use egui::{Color32, FontId, Galley, Image, Painter, Pos2, Rect, Rounding};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::borrow::BorrowMut;
 use std::collections::HashMap;
+use std::default::Default;
+use std::f32::consts::PI;
 
-use crate::{graph::CpuGraph, ui};
+use crate::cpugraph::CpuGraph;
+use crate::diskgraph::DiskGraph;
+use crate::infopane::InfoPane;
+use crate::memgraph::MemGraph;
+use crate::netgraph::NetGraph;
+use crate::table::{ProcessTable, BAR_HEIGHT, ROW_HEIGHT};
+use crate::ui::get_corners;
+use crate::{configs::*, ui};
+
+// use crate::{graph::CpuGraph, ui};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum CornerTypes {
@@ -12,387 +28,474 @@ pub enum CornerTypes {
     Ang60,
 }
 
-// Serializable configuration types
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum SplitDirection {
-    Horizontal,
-    Vertical,
+#[derive(Clone)]
+pub enum TitleFormats {
+    TOP { text: Option<String> },
+    SIDE { text: Option<String> },
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "config")]
-pub enum PaneTypeConfig {
-    Solid(SolidPaneConfig),
-    Text(TextPaneConfig),
-    Gradient(GradientPaneConfig),
+impl Default for TitleFormats {
+    fn default() -> Self {
+        TitleFormats::TOP { text: None }
+    }
 }
 
-// Runtime-only pane type that includes non-serializable data
-// #[derive(Clone)]
+const DEFAULT_CORNERS: [CornerTypes; 4] = [
+    CornerTypes::Ang30,
+    CornerTypes::Ang60,
+    CornerTypes::Ang60,
+    CornerTypes::Ang30,
+];
+
+// Enum to represent different types of panes
+#[derive(Deserialize, Serialize, Clone)]
+// #[serde(tag = "type")]
 pub enum PaneType {
-    Solid(SolidPane),
-    Text(TextPane),
-    Gradient(GradientPane),
+    Info,
+    CpuGraph,
+    MemGraph,
+    NetGraph,
+    DiskGraph,
+    ProcTable,
+    No,
 }
 
-// Serializable configs
-#[derive(Clone, Serialize, Deserialize)]
-pub struct SolidPaneConfig {
-    pub color: [u8; 3],
+#[derive(Deserialize, Serialize, Clone, PartialEq)]
+pub enum SplitType {
+    H,
+    V,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct TextPaneConfig {
-    pub text: String,
-    pub font_size: f32,
-    pub color: [u8; 3],
-    pub background_color: Option<[u8; 3]>,
+// Structure to store runtime data for different pane types
+pub enum PaneData {
+    Info { info_man: InfoPane },
+    CpuGraph { cpu_graph: CpuGraph },
+    MemGraph { mem_graph: MemGraph },
+    NetGraph { net_graph: NetGraph },
+    DiskGraph { disk_graph: DiskGraph },
+    ProcTable { proc_table: ProcessTable },
+    No {},
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct GradientPaneConfig {
-    pub start_color: [u8; 3],
-    pub end_color: [u8; 3],
-    pub horizontal: bool,
+impl Default for PaneData {
+    fn default() -> Self {
+        PaneData::No {}
+    }
 }
 
-// Runtime types with additional non-serializable data
-#[derive(Clone)]
-pub struct SolidPane {
-    config: SolidPaneConfig,
-    // Runtime-only fields
-    cached_color: Color32,
-}
+impl PaneData {
+    pub fn new(pane: &Pane) -> Self {
+        match pane {
+            Pane::Split { .. } => PaneData::No {},
 
-#[derive(Clone)]
-pub struct TextPane {
-    config: TextPaneConfig,
-    // Runtime-only fields
-    cached_color: Color32,
-    cached_bg_color: Option<Color32>,
-    cached_font: egui::FontId,
-}
-
-// #[derive(Clone)]
-pub struct GradientPane {
-    config: GradientPaneConfig,
-    // Runtime-only fields
-    cached_start_color: Color32,
-    cached_end_color: Color32,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct PaneConfig {
-    pub id: String,
-    #[serde(default)]
-    pub split: Option<SplitConfig>,
-    #[serde(default)]
-    pub pane_type: Option<PaneTypeConfig>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct SplitConfig {
-    pub direction: SplitDirection,
-    pub ratio: f32,
-    pub children: Vec<PaneConfig>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct LayoutConfig {
-    pub root: PaneConfig,
-    #[serde(default)]
-    pub default_pane_type: Option<PaneTypeConfig>,
-}
-
-// Runtime representation of the layout
-pub struct RuntimePane {
-    pub id: String,
-    pub split: Option<RuntimeSplit>,
-    pub pane_type: Option<PaneType>,
-}
-
-pub struct RuntimeSplit {
-    pub direction: SplitDirection,
-    pub ratio: f32,
-    pub children: Vec<RuntimePane>,
-}
-
-// Conversion implementations
-impl From<PaneTypeConfig> for PaneType {
-    fn from(config: PaneTypeConfig) -> Self {
-        match config {
-            PaneTypeConfig::Solid(config) => PaneType::Solid(SolidPane {
-                cached_color: Color32::from_rgb(config.color[0], config.color[1], config.color[2]),
-                config,
-            }),
-            PaneTypeConfig::Text(config) => PaneType::Text(TextPane {
-                cached_color: Color32::from_rgb(config.color[0], config.color[1], config.color[2]),
-                cached_bg_color: config
-                    .background_color
-                    .map(|c| Color32::from_rgb(c[0], c[1], c[2])),
-                cached_font: egui::FontId::proportional(config.font_size),
-                config,
-            }),
-            PaneTypeConfig::Gradient(config) => PaneType::Gradient(GradientPane {
-                cached_start_color: Color32::from_rgb(
-                    config.start_color[0],
-                    config.start_color[1],
-                    config.start_color[2],
-                ),
-                cached_end_color: Color32::from_rgb(
-                    config.end_color[0],
-                    config.end_color[1],
-                    config.end_color[2],
-                ),
-
-                config,
-            }),
+            Pane::Leaf { pane_type, .. } => match pane_type {
+                PaneType::Info => PaneData::Info {
+                    info_man: InfoPane::new(),
+                },
+                PaneType::CpuGraph => PaneData::CpuGraph {
+                    cpu_graph: CpuGraph::new(),
+                },
+                PaneType::MemGraph => PaneData::MemGraph {
+                    mem_graph: MemGraph::new(),
+                },
+                PaneType::NetGraph => PaneData::NetGraph {
+                    net_graph: NetGraph::new(),
+                },
+                PaneType::DiskGraph => PaneData::DiskGraph {
+                    disk_graph: DiskGraph::new(),
+                },
+                PaneType::ProcTable => PaneData::ProcTable {
+                    proc_table: ProcessTable::new(30, 50, 0),
+                },
+                PaneType::No {} => PaneData::No {},
+            },
         }
     }
 }
 
-impl PaneType {
-    fn render(&self, painter: &Painter, rect: Rect) {
-        ui::background_render(
-            painter,
-            rect,
-            [
-                CornerTypes::Ang30,
-                CornerTypes::Ang60,
-                CornerTypes::Ang30,
-                CornerTypes::Ang60,
-            ],
-        );
-        match self {
-            PaneType::Solid(pane) => {
-                // painter.rect_filled(rect, 0.0, pane.cached_color);
-                // painter.rect_stroke(rect, 0.0, (1.0, Color32::BLACK));
+// Main pane structure that represents either a split or leaf node
+#[derive(Deserialize, Serialize)]
+// #[default]
+#[serde(tag = "kind")]
+pub enum Pane {
+    Leaf {
+        pane_type: PaneType,
+        corners: [CornerTypes; 4],
+        #[serde(skip, default = "get_default_rect")]
+        rect: Rect,
+        #[serde(skip, default = "get_default_rect")]
+        inner_rect: Rect,
+        #[serde(skip)]
+        container_points: Vec<Pos2>,
+        #[serde(skip)]
+        title_type: TitleFormats,
+    },
+    Split {
+        direction: SplitType,
+        bias: f32,
+        #[serde(skip)]
+        first: Box<PaneInstance>,
+        #[serde(skip)]
+        second: Box<PaneInstance>,
+        a: Box<Pane>,
+        b: Box<Pane>,
+    },
+}
+
+const DEFAULT_RECT: Rect = Rect {
+    min: Pos2 { x: 0., y: 0. },
+    max: Pos2 { x: 0., y: 0. },
+};
+const DEFAULT_POINTS: Vec<Pos2> = Vec::new();
+
+fn get_default_rect() -> Rect {
+    DEFAULT_RECT
+}
+
+impl Default for Pane {
+    fn default() -> Self {
+        Pane::Leaf {
+            pane_type: PaneType::No {},
+            corners: DEFAULT_CORNERS,
+            rect: DEFAULT_RECT,
+            inner_rect: DEFAULT_RECT,
+            container_points: DEFAULT_POINTS,
+            title_type: TitleFormats::default(),
+        }
+    }
+}
+impl Default for PaneInstance {
+    fn default() -> Self {
+        PaneInstance {
+            config: Pane::default(),
+            runtime_data: PaneData::default(),
+        }
+    }
+}
+
+// impl Pane {
+//     fn
+// }
+// Runtime instance of a pane that includes both config and runtime data
+#[derive(Deserialize, Serialize)]
+pub struct PaneInstance {
+    config: Pane,
+    #[serde(skip)]
+    runtime_data: PaneData,
+}
+
+impl PaneInstance {
+    // Create a new instance from configuration
+    fn from_config(config: Pane) -> Self {
+        PaneInstance {
+            runtime_data: PaneData::new(&config),
+            config: config,
+        }
+    }
+
+    pub fn precalc(&mut self, rect: Rect) {
+        match &mut self.config {
+            Pane::Split {
+                direction,
+                bias,
+                first,
+                second,
+                ..
+            } => {
+                let (first_rect, second_rect) = if *direction == SplitType::V {
+                    let split_x = rect.min.x + rect.width() * bias.clone();
+                    (
+                        Rect::from_min_max(rect.min, egui::pos2(split_x, rect.max.y)),
+                        Rect::from_min_max(egui::pos2(split_x, rect.min.y), rect.max),
+                    )
+                } else {
+                    let mut split_y = rect.min.y + rect.height() * bias.clone();
+                    (
+                        Rect::from_min_max(rect.min, egui::pos2(rect.max.x, split_y)),
+                        Rect::from_min_max(egui::pos2(rect.min.x, split_y), rect.max),
+                    )
+                };
+
+                first.precalc(first_rect);
+                second.precalc(second_rect);
             }
-            PaneType::Text(pane) => {
-                // if let Some(bg_color) = pane.cached_bg_color {
-                //     painter.rect_filled(rect, 0.0, bg_color);
-                // }
+            Pane::Leaf {
+                pane_type,
+                corners,
+                rect: rect2,
+                inner_rect,
+                container_points,
+                title_type: title_type,
+            } => {
+                container_points.clone_from(&get_corners(rect, corners.to_owned()));
+                rect2.clone_from(&rect);
+                inner_rect.clone_from(&ui::find_largest_rectangle(container_points).unwrap());
 
-                // painter.text(
-                //     rect.center(),
-                //     egui::Align2::CENTER_CENTER,
-                //     &pane.config.text,
-                //     pane.cached_font.clone(),
-                //     pane.cached_color,
-                // );
-            }
-            PaneType::Gradient(pane) => {
-                let mut pane2 = pane;
-                // pane.cpu_graph.update();
-                // pane.cpu_graph.render(painter, rect);
-                // if pane.config.horizontal {
-                //     painter.rect_filled(rect, 0.0, pane.cached_start_color); // Simplified
-                // } else {
-                //     painter.rect_filled(rect, 0.0, pane.cached_end_color); // Simplified
-                // }
-            }
-        }
-    }
-}
+                let text = Some(
+                    match pane_type {
+                        PaneType::Info => "INFO",
+                        PaneType::CpuGraph => "CPU",
+                        PaneType::MemGraph => "MEM",
+                        PaneType::ProcTable => "PROC",
+                        PaneType::NetGraph => "NET",
+                        PaneType::DiskGraph => "DISK",
+                        _ => "ERR",
+                    }
+                    .to_string(),
+                );
 
-pub struct PaneRenderer {
-    runtime_config: RuntimePane,
-    default_pane_type: Option<PaneType>,
-}
+                title_type.clone_from(&if ((inner_rect.left() - rect2.left())
+                    + (rect2.right() - inner_rect.right()))
+                    > ((inner_rect.top() - rect2.top()) + (rect2.bottom() - inner_rect.bottom()))
+                {
+                    TitleFormats::SIDE { text: text }
+                } else {
+                    TitleFormats::TOP { text: text }
+                });
 
-impl PaneRenderer {
-    pub fn new(config: LayoutConfig) -> Self {
-        Self {
-            runtime_config: Self::convert_config(&config.root),
-            default_pane_type: config.default_pane_type.map(Into::into),
-        }
-    }
-
-    fn convert_config(config: &PaneConfig) -> RuntimePane {
-        RuntimePane {
-            id: config.id.clone(),
-            split: config.split.as_ref().map(|split| RuntimeSplit {
-                direction: split.direction,
-                ratio: split.ratio,
-                children: split.children.iter().map(Self::convert_config).collect(),
-            }),
-            pane_type: config.pane_type.clone().map(Into::into),
-        }
-    }
-
-    pub fn render(&self, painter: &Painter, rect: &Rect) {
-        self.render_pane(painter, &rect, &self.runtime_config);
-    }
-
-    fn render_pane(&self, painter: &Painter, rect: &Rect, pane: &RuntimePane) {
-        if let Some(split) = &pane.split {
-            if !split.children.is_empty() {
-                let rects =
-                    self.split_rect(rect, split.direction, split.ratio, split.children.len());
-
-                for (child, child_rect) in split.children.iter().zip(&rects) {
-                    self.render_pane(painter, child_rect, child);
-                }
-
-                // Draw split lines
-                let split_line_color = Color32::from_gray(128);
-                match split.direction {
-                    SplitDirection::Horizontal => {
-                        for rect in rects.windows(2) {
-                            let x = rect[0].max.x;
-                            painter.line_segment(
-                                [Pos2::new(x, rect[0].min.y), Pos2::new(x, rect[0].max.y)],
-                                (1.0, split_line_color),
-                            );
+                match pane_type {
+                    PaneType::ProcTable { .. } => {
+                        if let PaneData::ProcTable { proc_table } = self.runtime_data.borrow_mut() {
+                            proc_table.row_count =
+                                ((inner_rect.height() - BAR_HEIGHT) / ROW_HEIGHT).floor() as usize;
+                            // cpu_proc_table.row_count = 10;
                         }
                     }
-                    SplitDirection::Vertical => {
-                        for rect in rects.windows(2) {
-                            let y = rect[0].max.y;
-                            painter.line_segment(
-                                [Pos2::new(rect[0].min.x, y), Pos2::new(rect[0].max.x, y)],
-                                (1.0, split_line_color),
-                            );
-                        }
-                    }
+                    _ => {}
                 }
-            }
-        } else {
-            // Render leaf pane
-            let pane_type = &mut pane.pane_type.as_ref();
-
-            if let Some(pane_type) = pane_type {
-                pane_type.render(painter, *rect);
+                // let adj_rect = background_render(painter, rect, *corners);
             }
         }
     }
 
-    fn split_rect(
-        &self,
-        rect: &Rect,
-        direction: SplitDirection,
-        ratio: f32,
-        count: usize,
-    ) -> Vec<Rect> {
-        let mut rects = Vec::with_capacity(count);
-        let size = match direction {
-            SplitDirection::Horizontal => rect.width(),
-            SplitDirection::Vertical => rect.height(),
-        };
+    // Render the pane and its children
+    pub fn render(&mut self, painter: &Painter) {
+        match &mut self.config {
+            Pane::Split { first, second, .. } => {
+                first.render(painter);
+                second.render(painter);
+            }
+            Pane::Leaf {
+                pane_type,
+                rect,
+                inner_rect,
+                container_points,
+                title_type,
+                ..
+            } => {
+                painter.add(egui::Shape::convex_polygon(
+                    container_points.to_owned(),
+                    BACKGROUND_2,
+                    egui::Stroke::new(0.5, TEXT_COLOR),
+                ));
 
-        let first_size = size * ratio;
-        let remaining_size = size - first_size;
-        let size_per_remaining = if count > 1 {
-            remaining_size / (count as f32 - 1.0)
-        } else {
-            0.0
-        };
+                match title_type {
+                    TitleFormats::SIDE { text } => {
+                        let galley = painter.layout_no_wrap(
+                            text.as_ref().unwrap().to_owned(),
+                            TITLE_FONT,
+                            TEXT_COLOR,
+                        );
+                        let size = galley.size();
+                        let mid_x = rect.min.x + (f32::abs(rect.min.x - inner_rect.min.x) / 2.)
+                            - (size.y / 2.)
+                            + PANE_GAP;
+                        let mid_y = (inner_rect.min.y
+                            + f32::abs(inner_rect.min.y - inner_rect.max.y) / 2.)
+                            + size.x / 2.;
+                        painter.add(
+                            TextShape::new(Pos2 { x: mid_x, y: mid_y }, galley, Color32::WHITE)
+                                .with_angle(-PI / 2.),
+                        );
+                    }
+                    TitleFormats::TOP { text } => {
+                        let galley = painter.layout_no_wrap(
+                            text.as_ref().unwrap().to_owned(),
+                            TITLE_FONT,
+                            TEXT_COLOR,
+                        );
+                        let size = galley.size();
+                        let mid_x = rect.min.x
+                            + (f32::abs(inner_rect.min.x - inner_rect.max.x) / 2.)
+                            - (size.x / 2.);
+                        let mid_y = (rect.min.y + f32::abs(rect.min.y - inner_rect.min.y) / 2.)
+                            - (size.y / 2.)
+                            + PANE_GAP;
+                        painter.add(TextShape::new(
+                            Pos2 { x: mid_x, y: mid_y },
+                            galley,
+                            Color32::WHITE,
+                        ));
+                    }
+                }
 
-        for i in 0..count {
-            let (start, end) = match direction {
-                SplitDirection::Horizontal => {
-                    let start = if i == 0 {
-                        rect.min.x
-                    } else {
-                        rect.min.x + first_size + size_per_remaining * (i as f32 - 1.0)
-                    };
-                    let end = if i == 0 {
-                        rect.min.x + first_size
-                    } else {
-                        start + size_per_remaining
-                    };
-                    (Pos2::new(start, rect.min.y), Pos2::new(end, rect.max.y))
+                painter.rect_stroke(
+                    inner_rect.to_owned(),
+                    0.0,
+                    egui::Stroke::new(0.25, TEXT_COLOR),
+                );
+
+                match pane_type {
+                    PaneType::Info => {
+                        render_info(painter, inner_rect.to_owned(), &mut self.runtime_data);
+                    }
+                    PaneType::CpuGraph => {
+                        render_cpu_graph(painter, inner_rect.to_owned(), &mut self.runtime_data);
+                    }
+                    PaneType::MemGraph => {
+                        render_mem_graph(painter, inner_rect.to_owned(), &mut self.runtime_data);
+                    }
+                    PaneType::NetGraph => {
+                        render_net_graph(painter, inner_rect.to_owned(), &mut self.runtime_data);
+                    }
+                    PaneType::DiskGraph => {
+                        render_disk_graph(painter, inner_rect.to_owned(), &mut self.runtime_data);
+                    }
+                    PaneType::ProcTable => {
+                        render_proc_table(painter, inner_rect.to_owned(), &mut self.runtime_data);
+                    }
+                    PaneType::No => {}
                 }
-                SplitDirection::Vertical => {
-                    let start = if i == 0 {
-                        rect.min.y
-                    } else {
-                        rect.min.y + first_size + size_per_remaining * (i as f32 - 1.0)
-                    };
-                    let end = if i == 0 {
-                        rect.min.y + first_size
-                    } else {
-                        start + size_per_remaining
-                    };
-                    (Pos2::new(rect.min.x, start), Pos2::new(rect.max.x, end))
-                }
-            };
-            rects.push(Rect::from_min_max(start, end));
+            }
         }
-        rects
     }
 }
 
-// // Example JSON configuration:
-// const EXAMPLE_CONFIG: &str = r#"
-// {
-//     "root": {
-//         "id": "root",
-//         "split": {
-//             "direction": "Horizontal",
-//             "ratio": 0.3,
-//             "children": [
-//                 {
-//                     "id": "left",
-//                     "pane_type": {
-//                         "type": "Solid",
-//                         "config": {
-//                             "color": [100, 150, 200]
-//                         }
-//                     }
-//                 },
-//                 {
-//                     "id": "right",
-//                     "split": {
-//                         "direction": "Vertical",
-//                         "ratio": 0.6,
-//                         "children": [
-//                             {
-//                                 "id": "right_top",
-//                                 "pane_type": {
-//                                     "type": "Text",
-//                                     "config": {
-//                                         "text": "Hello World",
-//                                         "font_size": 24.0,
-//                                         "color": [255, 255, 255],
-//                                         "background_color": [50, 50, 150]
-//                                     }
-//                                 }
-//                             },
-//                             {
-//                                 "id": "right_bottom",
-//                                 "pane_type": {
-//                                     "type": "Gradient",
-//                                     "config": {
-//                                         "start_color": [200, 100, 100],
-//                                         "end_color": [100, 200, 100],
-//                                         "horizontal": true
-//                                     }
-//                                 }
-//                             }
-//                         ]
-//                     }
-//                 }
-//             ]
-//         }
-//     },
-//     "default_pane_type": {
-//         "type": "Solid",
-//         "config": {
-//             "color": [200, 200, 200]
-//         }
-//     }
-// }
-// "#;
+pub fn render_info(painter: &Painter, rect: Rect, data: &mut PaneData) {
+    if let PaneData::Info { info_man } = data {
+        info_man.update();
+        info_man.render(painter, rect);
+    }
+}
 
-// // Example usage
-// pub fn example_usage(ctx: &egui::Context) {
-//     // Parse configuration
-//     let config: LayoutConfig = serde_json::from_str(EXAMPLE_CONFIG).unwrap();
-//     let pane_renderer = PaneRenderer::new(config);
+// Example rendering functions for different pane types
+pub fn render_cpu_graph(painter: &Painter, rect: Rect, data: &mut PaneData) {
+    if let PaneData::CpuGraph { cpu_graph } = data {
+        cpu_graph.update();
+        cpu_graph.render(painter, rect);
+    }
+}
 
-//     // egui::CentralPanel::default().show(ctx, |ui| {
-//     //     let painter = ui.painter();
+pub fn render_mem_graph(painter: &Painter, rect: Rect, data: &mut PaneData) {
+    if let PaneData::MemGraph { mem_graph } = data {
+        mem_graph.update();
+        mem_graph.render(painter, rect);
+    }
+}
 
-//     // });
-// }
+pub fn render_net_graph(painter: &Painter, rect: Rect, data: &mut PaneData) {
+    if let PaneData::NetGraph { net_graph } = data {
+        net_graph.update();
+        net_graph.render(painter, rect);
+    }
+}
+
+pub fn render_disk_graph(painter: &Painter, rect: Rect, data: &mut PaneData) {
+    if let PaneData::DiskGraph { disk_graph } = data {
+        disk_graph.update();
+        disk_graph.render(painter, rect);
+    }
+}
+
+pub fn render_proc_table(painter: &Painter, rect: Rect, data: &mut PaneData) {
+    if let PaneData::ProcTable { proc_table } = data {
+        proc_table.update();
+        proc_table.render(painter, rect);
+    }
+}
+
+// Function to load pane configuration from JSON
+pub fn load_pane_config(json: &str) -> Result<PaneInstance, serde_json::Error> {
+    let config: Pane = serde_json::from_str(json)?;
+
+    // Create the pane hierarchy with runtime data
+    Ok(create_pane_instance(config))
+}
+
+// Helper function to create the pane hierarchy
+pub fn create_pane_instance(config: Pane) -> PaneInstance {
+    match config {
+        Pane::Split {
+            direction,
+            bias,
+            a,
+            b,
+            ..
+        } => {
+            let first = Box::new(create_pane_instance(*a));
+            let second = Box::new(create_pane_instance(*b));
+
+            PaneInstance {
+                config: Pane::Split {
+                    direction,
+                    bias,
+                    first,
+                    second,
+                    a: Box::new(Pane::default()),
+                    b: Box::new(Pane::default()),
+                },
+                runtime_data: PaneData::default(),
+            }
+        }
+        leaf => PaneInstance::from_config(leaf),
+    }
+}
+
+// Example JSON configuration
+pub const EXAMPLE_CONFIG: &str = r#"
+{
+    "kind": "Split",
+    "direction": "V",
+    "bias": 0.5,
+    "a": {
+        "kind": "Split",
+        "direction": "H",
+        "bias": 0.2,
+        "a": {
+            "kind": "Leaf",
+            "corners": ["Ang60", "Ang30", "Ang60", "Ang30"],
+            "pane_type": "Info"
+        },
+        "b": {
+            "kind": "Leaf",
+            "corners": ["Ang30", "Ang60", "SQUARE", "SQUARE"],
+            "pane_type": "ProcTable"
+        }
+    },
+    "b": {
+        "kind": "Split",
+        "direction": "H",
+        "bias": 0.5,
+        "a": {
+            "kind": "Split",
+            "direction": "H",
+            "bias": 0.5,
+            "a": {
+                "kind": "Leaf",
+                "corners": ["Ang60", "SQUARE", "SQUARE", "Ang30"],
+                "pane_type": "CpuGraph"
+            },
+            "b": {
+                "kind": "Leaf",
+                "corners": ["Ang60", "SQUARE", "SQUARE", "Ang30"],
+                "pane_type": "MemGraph"
+            }
+        },
+        "b": {
+            "kind": "Split",
+            "direction": "H",
+            "bias": 0.5,
+            "a": {
+                "kind": "Leaf",
+                "corners": ["Ang60", "SQUARE", "SQUARE", "Ang30"],
+                "pane_type": "NetGraph"
+            },
+            "b": {
+                "kind": "Leaf",
+                "corners": ["Ang60", "SQUARE", "SQUARE", "Ang30"],
+                "pane_type": "DiskGraph"
+            }
+        }
+    }
+}
+"#;

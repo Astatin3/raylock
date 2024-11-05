@@ -1,11 +1,33 @@
 use crate::structs;
-use egui::{Color32, Stroke};
+use egui::{Color32, FontId, Stroke};
 use std::f32::consts::PI;
 
 // pub const windows: PaneSplit =
 //     Pane::new(SplitHorisontal).new_hsplit(Pane::new(Temp1), Pane::new(Temp2));
 
+pub const SCREEN_WIDTH: f32 = 1920.;
+pub const SCREEN_HEIGHT: f32 = 1080.;
+
+pub const TITLE_FONT: FontId = FontId::monospace(25.);
+pub const GRAPH_STROKE: Stroke = Stroke {
+    width: 0.5,
+    color: Color32::from_rgba_premultiplied(255, 255, 255, 1),
+};
+
+pub const TEXT_FONT: FontId = FontId::monospace(16.);
+
+pub const UP_GRAPH_STROKE: Stroke = Stroke {
+    width: 1.5,
+    color: Color32::from_rgba_premultiplied(0, 255, 255, 1),
+};
+
+pub const DOWN_GRAPH_STROKE: Stroke = Stroke {
+    width: 1.5,
+    color: Color32::from_rgba_premultiplied(255, 64, 4, 1),
+};
+
 pub const TEXT_COLOR: Color32 = Color32::from_rgb(255, 255, 255);
+pub const BACKGROUND: Color32 = Color32::BLACK;
 pub const BACKGROUND_2: Color32 = Color32::from_rgba_premultiplied(10, 10, 10, 230);
 
 pub const LOGIN_CIRCLE_RADIUS: f32 = 50.;
@@ -40,65 +62,3 @@ pub const DOTS_COLOR: Color32 = Color32::from_rgb(255, 255, 255);
 
 pub const CORNER_CUT: f32 = LOGIN_CIRCLE_RADIUS * 1.41421356237;
 pub const PANE_GAP: f32 = 6.;
-
-// Example JSON configuration:
-pub const EXAMPLE_CONFIG: &str = r#"
-{
-    "root": {
-        "id": "root",
-        "split": {
-            "direction": "Horizontal",
-            "ratio": 0.9,
-            "children": [
-                {
-                    "id": "left",
-                    "pane_type": {
-                        "type": "Solid",
-                        "config": {
-                            "color": [255, 255, 255]
-                        }
-                    }
-                },
-                {
-                    "id": "right",
-                    "split": {
-                        "direction": "Vertical",
-                        "ratio": 0.6,
-                        "children": [
-                            {
-                                "id": "right_top",
-                                "pane_type": {
-                                    "type": "Text",
-                                    "config": {
-                                        "text": "Hello World",
-                                        "font_size": 24.0,
-                                        "color": [255, 255, 255],
-                                        "background_color": [50, 50, 150]
-                                    }
-                                }
-                            },
-                            {
-                                "id": "right_bottom",
-                                "pane_type": {
-                                    "type": "Gradient",
-                                    "config": {
-                                        "start_color": [200, 200, 200],
-                                        "end_color": [100, 200, 100],
-                                        "horizontal": true
-                                    }
-                                }
-                            }
-                        ]
-                    }
-                }
-            ]
-        }
-    },
-    "default_pane_type": {
-        "type": "Solid",
-        "config": {
-            "color": [200, 200, 200]
-        }
-    }
-}
-"#;

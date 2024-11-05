@@ -1,16 +1,16 @@
 use crate::configs::*;
-use crate::graph::CpuGraph;
 use crate::panes;
+use crate::panes::PaneInstance;
 use crate::structs;
-use panes::PaneRenderer;
+// use panes::PaneRenderer;
 // use crate::structs::cur_context;
 // use crate::structs::windowTypes;
 
 use eframe::egui;
 use egui::Color32;
 use egui::Shape;
-use egui::{Pos2, Vec2};
-use panes::{PaneConfig, SplitDirection};
+use egui::{Pos2, Rect, Vec2};
+use panes::Pane;
 use std::f32::consts::PI;
 
 use std::ops::Deref;
@@ -24,14 +24,16 @@ fn rot_circle(i: i16, center: Pos2, rad: f32, offset_ang: f32, ang_per_num: f32)
         })
 }
 
-fn add_Pos2(add: Vec2, points: &mut Vec<Pos2>) -> &mut Vec<Pos2> {
+fn add_Pos2(add: Vec2, points: Vec<Pos2>) -> Vec<Pos2> {
+    let mut points = points;
     for i in 0..points.len() {
         points[i] = points[i] + add;
     }
     points
 }
 
-fn mult_Pos2(mult: f32, points: &mut Vec<Pos2>) -> &mut Vec<Pos2> {
+fn mult_Pos2(mult: f32, points: Vec<Pos2>) -> Vec<Pos2> {
+    let mut points = points;
     let vec = Vec2 { x: mult, y: mult };
     for i in 0..points.len() {
         points[i] = points[i] * mult;
@@ -39,7 +41,8 @@ fn mult_Pos2(mult: f32, points: &mut Vec<Pos2>) -> &mut Vec<Pos2> {
     points
 }
 
-fn rotate_90(points: &mut Vec<Pos2>) -> &mut Vec<Pos2> {
+fn rotate_90(points: Vec<Pos2>) -> Vec<Pos2> {
+    let mut points = points;
     for i in 0..points.len() {
         points[i] = Pos2 {
             x: -points[i].y,
@@ -48,7 +51,8 @@ fn rotate_90(points: &mut Vec<Pos2>) -> &mut Vec<Pos2> {
     }
     points
 }
-fn rotate_180(points: &mut Vec<Pos2>) -> &mut Vec<Pos2> {
+fn rotate_180(points: Vec<Pos2>) -> Vec<Pos2> {
+    let mut points = points;
     for i in 0..points.len() {
         points[i] = Pos2 {
             x: -points[i].x,
@@ -57,7 +61,8 @@ fn rotate_180(points: &mut Vec<Pos2>) -> &mut Vec<Pos2> {
     }
     points
 }
-fn rotate_270(points: &mut Vec<Pos2>) -> &mut Vec<Pos2> {
+fn rotate_270(points: Vec<Pos2>) -> Vec<Pos2> {
+    let mut points = points;
     for i in 0..points.len() {
         points[i] = Pos2 {
             x: points[i].y,
@@ -82,65 +87,66 @@ fn get_corner_points(ctype: panes::CornerTypes) -> Vec<Pos2> {
     }
 }
 
-pub fn background_render(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    corners: [panes::CornerTypes; 4],
-) {
+pub fn get_corners(rect: egui::Rect, corners: [panes::CornerTypes; 4]) -> Vec<Pos2> {
     let mut points: Vec<Pos2> = Vec::new();
     let left = rect.left() + PANE_GAP;
     let right = rect.right() - PANE_GAP;
     let bottom = rect.bottom() - PANE_GAP;
     let top = rect.top() + PANE_GAP;
-    // let x1 = left + CORNER_CUT - PANE_GAP;
-    // let x2 = right - CORNER_CUT + PANE_GAP;
-    // let y1 = top + CORNER_CUT - PANE_GAP;
-    // let y2 = bottom - CORNER_CUT + PANE_GAP;
 
-    points.append(add_Pos2(
-        Vec2 { x: left, y: top },
-        mult_Pos2(CORNER_CUT, &mut get_corner_points(corners[0]).to_vec()),
-    ));
+    let rot_point_tl = get_corner_points(corners[0]).to_vec();
+    let rot_point_tr = rotate_90(get_corner_points(corners[1]).to_vec());
+    let rot_point_bl = rotate_180(get_corner_points(corners[2]).to_vec());
+    let rot_point_br = rotate_270(get_corner_points(corners[3]).to_vec());
 
-    points.append(add_Pos2(
-        Vec2 { x: right, y: top },
-        mult_Pos2(
-            CORNER_CUT,
-            rotate_90(&mut get_corner_points(corners[1]).to_vec()),
-        ),
-    ));
+    points.append(
+        add_Pos2(
+            Vec2 { x: left, y: top },
+            mult_Pos2(CORNER_CUT, rot_point_tl),
+        )
+        .as_mut(),
+    );
 
-    points.append(add_Pos2(
-        Vec2 {
-            x: right,
-            y: bottom,
-        },
-        mult_Pos2(
-            CORNER_CUT,
-            rotate_180(&mut get_corner_points(corners[2]).to_vec()),
-        ),
-    ));
+    points.append(
+        add_Pos2(
+            Vec2 { x: right, y: top },
+            mult_Pos2(CORNER_CUT, rot_point_tr),
+        )
+        .as_mut(),
+    );
 
-    points.append(add_Pos2(
-        Vec2 { x: left, y: bottom },
-        mult_Pos2(
-            CORNER_CUT,
-            rotate_270(&mut get_corner_points(corners[3]).to_vec()),
-        ),
-    ));
+    points.append(
+        add_Pos2(
+            Vec2 {
+                x: right,
+                y: bottom,
+            },
+            mult_Pos2(CORNER_CUT, rot_point_bl),
+        )
+        .as_mut(),
+    );
 
-    let filled_polygon =
-        Shape::convex_polygon(points, BACKGROUND_2, egui::Stroke::new(0.5, TEXT_COLOR));
+    points.append(
+        add_Pos2(
+            Vec2 { x: left, y: bottom },
+            mult_Pos2(CORNER_CUT, rot_point_br),
+        )
+        .as_mut(),
+    );
 
-    painter.add(filled_polygon);
+    // let largest_rect = find_largest_rectangle(&points).unwrap();
+
+    // let filled_polygon =
+
+    return points;
 }
 
-pub fn update_password_viewer(
+pub fn update(
     wstate: MutexGuard<'_, structs::AuthState>,
     ctx: &egui::Context,
     frame: &mut eframe::Frame,
     ui: &mut egui::Ui,
-    winconfig: &mut PaneRenderer,
+    root_pane: &mut PaneInstance,
 ) {
     let rect: egui::Rect = ui.available_rect_before_wrap();
     // let ctx: cur_context = cur_context {
@@ -152,17 +158,17 @@ pub fn update_password_viewer(
     };
     let painter: &egui::Painter = ui.painter();
 
-    paint_windows(
-        painter,
-        rect.width() as f32,
-        rect.height() as f32,
-        0.,
-        0.,
-        // windows,
-    );
+    // paint_windows(
+    //     painter,
+    //     rect.width() as f32,
+    //     rect.height() as f32,
+    //     0.,
+    //     0.,
+    //     // windows,
+    // );
 
-    dots(painter, ui.clip_rect());
-    winconfig.render(painter, &rect);
+    // dots(painter, ui.clip_rect());
+    root_pane.render(ui.painter());
     paint_password_circle(state, ctx, frame, ui, center, painter);
 }
 
@@ -272,19 +278,144 @@ fn paint_password_circle(
     ctx.request_repaint();
 }
 
-fn paint_windows(
-    painter: &egui::Painter,
+pub fn find_largest_rectangle(points: &[Pos2]) -> Option<Rect> {
+    if points.len() < 4 {
+        return None;
+    }
 
-    width: f32,
-    height: f32,
-    x: f32,
-    y: f32,
-    // pane: structs::PaneSplit,
-) {
-    // match pane.wintype {
-    //     windowTypes::SplitHorisontal => {
-    //         paint_windows(painter, width, height / 2., x, y, pane.sub_a);
-    //         paint_windows(painter, width, height / 2., x, y + height / 2., pane.sub_b);
-    //     }
-    // }
+    // Helper function to calculate area of a rectangle
+    fn calculate_area(rect: &Rect) -> f32 {
+        rect.width() * rect.height()
+    }
+
+    // Helper function to determine if a point is inside a polygon using ray casting
+    fn is_point_in_polygon(point: &Pos2, polygon: &[Pos2]) -> bool {
+        let mut inside = false;
+        let mut j = polygon.len() - 1;
+
+        for i in 0..polygon.len() {
+            if ((polygon[i].y >= point.y) != (polygon[j].y >= point.y))
+                && (point.x
+                    <= (polygon[j].x - polygon[i].x) * (point.y - polygon[i].y)
+                        / (polygon[j].y - polygon[i].y)
+                        + polygon[i].x)
+            {
+                inside = !inside;
+            }
+            j = i;
+        }
+
+        inside
+    }
+
+    // Helper function to check if a rectangle is completely inside the polygon
+    fn is_rect_in_polygon(rect: &Rect, polygon: &[Pos2]) -> bool {
+        // Check all four corners of the rectangle
+        let corners = [
+            rect.min,
+            Pos2::new(rect.max.x, rect.min.y),
+            rect.max,
+            Pos2::new(rect.min.x, rect.max.y),
+        ];
+
+        corners
+            .iter()
+            .all(|corner| is_point_in_polygon(corner, polygon))
+    }
+
+    // Helper function to check if a set of points forms a valid rectangle
+    fn is_valid_rectangle(p1: &Pos2, p2: &Pos2, p3: &Pos2, p4: &Pos2) -> bool {
+        // Sort points by x coordinate
+        let mut pts = vec![p1, p2, p3, p4];
+        pts.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+
+        // For a valid rectangle:
+        // - The first two points should have the same x-coordinate
+        // - The last two points should have the same x-coordinate
+        // - Two points should have the min y-coordinate
+        // - Two points should have the max y-coordinate
+        let x_eps = 0.;
+        let y_eps = 0.;
+
+        // // Check x-coordinates are properly paired
+        // if (pts[0].x - pts[1].x).abs() >= x_eps || (pts[2].x - pts[3].x).abs() >= x_eps {
+        //     return false;
+        // }
+
+        // // Sort points by y coordinate
+        // pts.sort_by(|a, b| a.y.partial_cmp(&b.y).unwrap());
+
+        // // Check y-coordinates are properly paired
+        // if (pts[0].y - pts[1].y).abs() >= y_eps || (pts[2].y - pts[3].y).abs() >= y_eps {
+        //     return false;
+        // }
+
+        true
+    }
+
+    // Sort points to ensure they form a proper polygon
+    let mut polygon_points = points.to_vec();
+    let center = Pos2::new(
+        polygon_points.iter().map(|p| p.x).sum::<f32>() / polygon_points.len() as f32,
+        polygon_points.iter().map(|p| p.y).sum::<f32>() / polygon_points.len() as f32,
+    );
+
+    // Sort points clockwise around the center
+    polygon_points.sort_by(|a, b| {
+        let a_angle = (a.y - center.y).atan2(a.x - center.x);
+        let b_angle = (b.y - center.y).atan2(b.x - center.x);
+        b_angle.partial_cmp(&a_angle).unwrap()
+    });
+
+    let mut largest_rect = None;
+    let mut max_area = 0.0;
+
+    // Try all combinations of 4 points
+    for i in 0..points.len() {
+        for j in i + 1..points.len() {
+            for k in j + 1..points.len() {
+                for l in k + 1..points.len() {
+                    let p1 = points[i];
+                    let p2 = points[j];
+                    let p3 = points[k];
+                    let p4 = points[l];
+
+                    // Skip if these points don't form a valid rectangle
+                    if !is_valid_rectangle(&p1, &p2, &p3, &p4) {
+                        continue;
+                    }
+
+                    // Create rectangle from these points
+                    let min_x = p1.x.min(p2.x).min(p3.x).min(p4.x);
+                    let max_x = p1.x.max(p2.x).max(p3.x).max(p4.x);
+                    let min_y = p1.y.min(p2.y).min(p3.y).min(p4.y);
+                    let max_y = p1.y.max(p2.y).max(p3.y).max(p4.y);
+
+                    let rect = Rect {
+                        min: Pos2 {
+                            x: min_x + 1.,
+                            y: min_y + 1.,
+                        },
+                        max: Pos2 {
+                            x: max_x - 1.,
+                            y: max_y - 1.,
+                        },
+                    };
+
+                    // Verify the rectangle is inside the polygon
+                    if !is_rect_in_polygon(&rect, &polygon_points) {
+                        continue;
+                    }
+
+                    let area = calculate_area(&rect);
+                    if area > max_area {
+                        max_area = area;
+                        largest_rect = Some(rect);
+                    }
+                }
+            }
+        }
+    }
+
+    largest_rect
 }
